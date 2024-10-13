@@ -211,25 +211,101 @@ def update_feedback(query_id: int, feedback: str):
     except Exception as e:
         st.error(f"❌ Error updating feedback: {e}")
 
-# Function to display the Wikipedia page summary
-def display_summary(page_title: str):
+# # Function to display the Wikipedia page summary
+# def display_summary(page_title: str):
+#     """
+#     Display the summary of the selected Wikipedia page.
+
+#     Parameters:
+#     - page_title: str, the title of the Wikipedia page.
+#     """
+#     try:
+#         summary = get_page_summary_cached(page_title)
+#         if summary:
+#             st.write(f"### Information about '{page_title}':")
+#             st.write(summary)
+#             wiki_url = f"https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')}"
+#             st.markdown(f"[🔗 Read more on Wikipedia]({wiki_url})")
+#         else:
+#             st.warning(f"⚠️ Sorry, the page '{page_title}' does not have an available summary.")
+#     except Exception as e:
+#         st.error(f"❌ Error displaying summary: {e}")
+
+def display_summary(page_title: str, question: str):
     """
-    Display the summary of the selected Wikipedia page.
+    Display an answer to the user's question using OpenAI's API (if available),
+    followed by the Wikipedia summary.
 
     Parameters:
     - page_title: str, the title of the Wikipedia page.
+    - question: str, the user's question.
     """
     try:
         summary = get_page_summary_cached(page_title)
         if summary:
-            st.write(f"### Information about '{page_title}':")
+            # Display the AI-generated answer if OpenAI API key is provided
+            if st.session_state['openai_api_key']:
+                # Generate an answer using OpenAI's API
+                answer = generate_answer_with_openai(question, summary)
+                if answer:
+                    st.write(f"### Answer to your question:")
+                    st.write(answer)
+                else:
+                    st.warning("⚠️ Unable to generate an answer at this time.")
+            # Display the Wikipedia summary
+            st.write(f"### Summary of '{page_title}':")
             st.write(summary)
-            wiki_url = f"https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')}"
-            st.markdown(f"[🔗 Read more on Wikipedia]({wiki_url})")
+            # Provide a link to the full Wikipedia page
+            st.markdown(f"[🔗 Read more about '{page_title}' on Wikipedia](https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')})")
         else:
             st.warning(f"⚠️ Sorry, the page '{page_title}' does not have an available summary.")
     except Exception as e:
         st.error(f"❌ Error displaying summary: {e}")
+
+def generate_answer_with_openai(question: str, summary: str) -> str:
+    """
+    Generate an answer to the user's question using OpenAI's API, based on the Wikipedia summary.
+
+    Parameters:
+    - question: str, the user's question.
+    - summary: str, the summary of the Wikipedia page.
+
+    Returns:
+    - answer: str, the generated answer.
+    """
+    # Ensure OpenAI API key is provided
+    if not st.session_state['openai_api_key']:
+        st.error("OpenAI API key not provided.")
+        return ""
+
+    prompt = f"""You are a helpful assistant who uses the provided context to answer the question.
+
+            Context:
+            \"\"\"
+            {summary}
+            \"\"\"
+
+            Question:
+            \"\"\"
+            {question}
+            \"\"\"
+
+            Answer the question based on the context above. If the answer is not in the context, politely say that you don't have enough information.
+            """
+    try:
+        with st.spinner('Generating answer with OpenAI...'):
+            response = OPENAI_CLIENT.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            answer = response.choices[0].message.content.strip()
+            return answer
+    except openai.OpenAIError as e1:
+        st.error(f"OpenAI API error: {e1}")
+        return ""
+    except Exception as e2:
+        st.error(f"Unexpected error: {e2}")
+        return ""
 
 # Function to get the cached Wikipedia page summary
 @st.cache_data(show_spinner=False) # Cache the results to avoid repeated API calls
@@ -632,7 +708,9 @@ def main():
     if st.session_state.get('show_summary', False):
         with st.spinner('📄 Fetching summary...'):
             # Display the summary of the selected page
-            display_summary(st.session_state['page_title'])
+            # display_summary(st.session_state['page_title'])
+            # Display the answer and summary
+            display_summary(st.session_state['page_title'], st.session_state['question'])
 
         # Collect feedback using query_id
         if st.session_state['query_id'] is not None:
